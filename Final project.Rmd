@@ -1,0 +1,74 @@
+---
+title: "Machine Learning Project"
+author: "Andrew L"
+date: "January 31, 2016"
+output: html_document
+---
+
+##Overview
+The Human Activity Recognition dataset (http://groupware.les.inf.puc-rio.br/har) includes data on how six individuals performed a barbell lifting exercise. The dataset includes a wide range of movement variables and documents whether the individuals performed the exercise exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) or throwing the hips to the front (Class E). The purpose of this study is to use the data to predict how the individual performed the exercise. 
+
+##Load packages
+First we load the required packages and data.
+```{r}
+library(caret)
+library(randomForest)
+completetraining <- read.csv("pml-training.csv")
+set.seed(123456)
+```
+
+##Clean the data
+
+After importing the data, it's clear that the first seven variables can be removed from the prediction exercise because they include data that would not have a meaningful effect on how the individuals performed the exercise. There is also a large number of variables that consist entirely of NA values. These are also filtered out.
+
+```{r}
+completetraining <- completetraining[, -c(1:7)]
+completetraining <- completetraining[, colSums(is.na(completetraining)) == 0]
+dim(completetraining)
+```
+
+This drops the number of variables from 160 to 86. However, the data still includes a large number of variables that do not seem to convey substantive information. In particular, many variables have blank data. These are also classified as factor variables. We can remove these as well by converting the data to numeric and removing the rest of the missing data.
+
+```{r, warning=FALSE}
+classe <- completetraining$classe
+indx <- sapply(completetraining, is.factor)
+completetraining[indx] <- lapply(completetraining[indx], function(x) as.numeric(as.character(x)))
+completetraining <- completetraining[, colSums(is.na(completetraining)) == 0]
+completetraining$classe <- classe
+dim(completetraining)
+```
+
+This reduces the number of variables to 53.
+
+#Split remaining data into training and testing sets
+In order to test the accuracy of the algorithm we split the dataset into two parts: 70 percent of the data should be randomly put into a training set, with the rest of the data put into a testing set.
+
+```{r}
+inTrain <- createDataPartition(y=completetraining$classe, p=.7, list=FALSE)
+training <- completetraining[inTrain,]
+testing <- completetraining[-inTrain,]
+```
+
+#Run random forest and predict on test set
+The random forest is chosen to develop the prediction model. This algorithm is useful because the number of features is still somewhat high at 52, and I lack subject matter knowledge to know which of these features might be important. The random forest will indicate which variables are important in predicting the variable of interest.
+
+Another advantage of this algorithm is that cross-validation is implicit in this method because each tree is constructed from a sample of the data (see: http://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm#ooberr).
+
+We run the model and view the top 20 most important variables.
+
+```{r}
+model_rf <- randomForest(classe ~ ., method = 'rf', data = training)
+varImpPlot(model_rf, n.var=20, scale=TRUE, main="Variable Importance")
+```
+
+The resulting model relies heavily on a small number of variables. In particular, "roll_belt," "yaw_belt," and five other variables are shown to be the most important. From there, there is a gradual decline in variable importance.
+
+However, given the relatively small number of variables, we can go ahead and run the random forest algorithm with all of the variables and then apply the resulting model to the test set. Since the test set was withheld in developing model, the error observed will be an accurate indication of the out of sample error.
+
+```{r}
+pred_rf <- predict(model_rf, testing)
+confusionMatrix(testing$classe, pred_rf)
+```
+
+The model's accuracy is 99.49%, which is extremely high. If we wanted to try and get even higher accuracy, we could try other algorithms (such as boosting or linear discriminant analysis), and even stack multiple models together. However, the 99.49% is already a very good outcome, and the random forest model does not take a long time to process; therefore it is sufficient to stop here.
+
